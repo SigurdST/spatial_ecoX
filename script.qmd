@@ -1,0 +1,76 @@
+---
+title: "Project in Spatial Econometrics"
+format: html
+editor: visual
+author: "Anaïs BOUGHANEM, Théo DRUILHE and Sigurd SAUE"
+---
+
+We download the necessary packages.
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+```
+
+# 1 Data
+
+## 1.1 Migration flow data
+
+We first load and analyze the data.
+
+```{r}
+# Load the migration data
+load("mig_data.RData")
+
+# Inspect the structure of the data
+str(mig_data)
+```
+
+```{r}
+# Filter for the period 2020–2024 and select the Pseudo-Bayesian flow estimates
+
+mig_rate_2020_2024 <- mig_data %>%
+  filter(period == "2020-2024") %>%
+  select(origin, dest, mig_rate)
+
+# Check the first few rows of the result
+head(mig_rate_2020_2024)
+```
+
+### Migration Rate Method
+
+Dennett (2016) proposed a method to estimate bilateral migration flows using a **single stock table** and an estimate of **total global migration**. This approach allows us to generate directional flows even when direct flow data is unavailable.
+
+**Step-by-Step Method**
+
+Let:
+
+- $s_{gh}^t$: Number of migrants **from origin** $g$ living in **destination** $h$ at time $t$
+- $M^t$: Estimated **total global migration** for the period
+- $r_{gh}^t$: Estimated **flow rate** from $g$ to $h$ at time $t$
+- $F_{g \rightarrow h}^t$: Estimated **flow** from $g$ to $h$
+
+Then:
+
+1. **Compute global migration rate**:
+   $$
+   r_{gh}^t = \frac{s_{gh}^t}{\sum_{g \neq h} s_{gh}^t}
+   $$
+   The denominator is the sum of all off-diagonal stock values — i.e., total foreign-born population globally.
+
+2. **Estimate total migration flows (M)**:
+   Since $M^t$ is not directly known, it's approximated by:
+   $$
+   M^t = \sum_h \left| \sum_g s_{gh}^{t+1} - \sum_g s_{gh}^{t} \right|
+   $$
+   This is the **sum of absolute net migration changes** per destination (column totals).
+
+3. **Estimate bilateral flow**:
+   $$
+   F_{g \rightarrow h}^t = M^t \times r_{gh}^t
+   $$
+
+**Interpretation**
+
+- The stock table provides the **relative distribution** of migrants.
+- The sum of absolute net changes provides a **scaling factor** for total migration volume.
+- The resulting flows maintain **global consistency** while reflecting the stock structure.
