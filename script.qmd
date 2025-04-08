@@ -11,6 +11,9 @@ We download the necessary packages.
 library(dplyr)
 library(sf)
 library(WDI)
+library(tidyr) 
+library(ggplot2)
+
 ```
 
 # 1 Data
@@ -46,36 +49,30 @@ Dennett (2016) proposed a method to estimate bilateral migration flows using a *
 
 Let:
 
-- $s_{gh}^t$: Number of migrants **from origin** $g$ living in **destination** $h$ at time $t$
-- $M^t$: Estimated **total global migration** for the period
-- $r_{gh}^t$: Estimated **flow rate** from $g$ to $h$ at time $t$
-- $F_{g \rightarrow h}^t$: Estimated **flow** from $g$ to $h$
+-   $s_{gh}^t$: Number of migrants **from origin** $g$ living in **destination** $h$ at time $t$
+-   $M^t$: Estimated **total global migration** for the period
+-   $r_{gh}^t$: Estimated **flow rate** from $g$ to $h$ at time $t$
+-   $F_{g \rightarrow h}^t$: Estimated **flow** from $g$ to $h$
 
 Then:
 
-1. **Compute global migration rate**:
-   $$
-   r_{gh}^t = \frac{s_{gh}^t}{\sum_{g \neq h} s_{gh}^t}
-   $$
-   The denominator is the sum of all off-diagonal stock values — i.e., total foreign-born population globally.
+1.  **Compute global migration rate**: $$
+    r_{gh}^t = \frac{s_{gh}^t}{\sum_{g \neq h} s_{gh}^t}
+    $$ The denominator is the sum of all off-diagonal stock values — i.e., total foreign-born population globally.
 
-2. **Estimate total migration flows (M)**:
-   Since $M^t$ is not directly known, it's approximated by:
-   $$
-   M^t = \sum_h \left| \sum_g s_{gh}^{t+1} - \sum_g s_{gh}^{t} \right|
-   $$
-   This is the **sum of absolute net migration changes** per destination (column totals).
+2.  **Estimate total migration flows (M)**: Since $M^t$ is not directly known, it's approximated by: $$
+    M^t = \sum_h \left| \sum_g s_{gh}^{t+1} - \sum_g s_{gh}^{t} \right|
+    $$ This is the **sum of absolute net migration changes** per destination (column totals).
 
-3. **Estimate bilateral flow**:
-   $$
-   F_{g \rightarrow h}^t = M^t \times r_{gh}^t
-   $$
+3.  **Estimate bilateral flow**: $$
+    F_{g \rightarrow h}^t = M^t \times r_{gh}^t
+    $$
 
 #### Interpretation
 
-- The stock table provides the **relative distribution** of migrants.
-- The sum of absolute net changes provides a **scaling factor** for total migration volume.
-- The resulting flows maintain **global consistency** while reflecting the stock structure.
+-   The stock table provides the **relative distribution** of migrants.
+-   The sum of absolute net changes provides a **scaling factor** for total migration volume.
+-   The resulting flows maintain **global consistency** while reflecting the stock structure.
 
 ### Description of the Migration Rate Flow Map (2020–2024)
 
@@ -85,9 +82,9 @@ This method emphasizes migration intensity, meaning flows are normalized by the 
 
 Several prominent migration corridors are visible:
 
-- From Latin America to North America, especially strong flows from Mexico and Central America to the United States.
-- From South Asia and Southeast Asia to the Gulf countries or to the United States and Canada.
-- From Eastern Europe to Western Europe, especially toward Germany and the UK.
+-   From Latin America to North America, especially strong flows from Mexico and Central America to the United States.
+-   From South Asia and Southeast Asia to the Gulf countries or to the United States and Canada.
+-   From Eastern Europe to Western Europe, especially toward Germany and the UK.
 
 Major countries of origin with significant outward migration include India, Mexico, Syria and the Philippines. On the receiving side, major destinations include the United States, Germany, the United Kingdom, France, Australia, and the Gulf states.
 
@@ -107,20 +104,20 @@ These consistent patterns suggest that the main global migration trends are robu
 
 **Pseudo-Bayesian**
 
-- Flows seem globally bigger than on the other maps.
+-   Flows seem globally bigger than on the other maps.
 
 **Drop Negative and Reverse Negative**
 
-- These methods result in sparser maps with fewer visible corridors.
-- Strong flows like Mexico to the US still appear, but smaller flows are often eliminated.
+-   These methods result in sparser maps with fewer visible corridors.
+-   Strong flows like Mexico to the US still appear, but smaller flows are often eliminated.
 
 **Minimization Open and Close**
 
-- Very similar to the Migration Rate method.
+-   Very similar to the Migration Rate method.
 
 **Migration Rate**
 
-- The Russia to Ukraine arrow is reversed compared to the other methods, indicating a different interpretation of the flow direction.
+-   The Russia to Ukraine arrow is reversed compared to the other methods, indicating a different interpretation of the flow direction.
 
 ## 1.2 Contours data
 
@@ -133,6 +130,7 @@ world <- st_read("CCMN_GeoDATA.geojson")
 # Transform the Coordinate Reference System to ESRI:54030 (World Robinson projection)
 world_proj <- st_transform(world, crs = 'ESRI:54030')
 ```
+
 ## 1.3 Explanatory variables at country level
 
 ```{r}
@@ -171,4 +169,246 @@ my_covariates <- my_covariates %>%
 my_covariates <- my_covariates %>%
   left_join(unemp_data, by = c("ISO3"="iso3c", "period"="year"))
 my_covariates
+```
+
+## 2 Migration Flows and Dependent Variables
+
+In this section, we analyze both **immigration** and **emigration** flows, compute per capita migration rates, and create a net migration variable.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# 1. Filtrer les données migration sur 2020–2024
+mig_data_filtered <- mig_data %>%
+  filter(period == "2020-2024")
+
+# 2. Agréger les flux entrants et sortants
+inflows <- mig_data_filtered %>%
+  group_by(dest) %>%
+  summarise(inflow = sum(reverse_neg, na.rm = TRUE))
+
+outflows <- mig_data_filtered %>%
+  group_by(origin) %>%
+  summarise(outflow = sum(reverse_neg, na.rm = TRUE))
+
+# 3. Garder uniquement la population pour 2022 (liée à 2020–2024)
+pop_2022 <- my_covariates %>%
+  filter(period == "2022") %>%
+  select(ISO3, population)
+
+# 4. Join clean
+table_rates <- pop_2022 %>%
+  left_join(inflows, by = c("ISO3" = "dest")) %>%
+  left_join(outflows, by = c("ISO3" = "origin")) %>%
+  mutate(
+    inflow = replace_na(inflow, 0),
+    outflow = replace_na(outflow, 0),
+    immigrates = inflow / population,
+    emigrates = outflow / population,
+    net = immigrates - emigrates
+  )
+
+```
+
+```{r}
+# Top 10 pays en termes absolus (pas par habitant)
+top10_outflow_abs <- table_rates %>%
+  arrange(desc(outflow)) %>%
+  slice_head(n = 10)
+
+top10_inflow_abs <- table_rates %>%
+  arrange(desc(inflow)) %>%
+  slice_head(n = 10)
+
+# Les deux graphes côte à côte
+library(ggplot2)
+library(patchwork)  # pour coller les graphes
+
+p1 <- ggplot(top10_outflow_abs, aes(x = reorder(ISO3, outflow), y = outflow)) +
+  geom_point(size = 3) +
+  coord_flip() +
+  labs(title = "Top Outflows", x = "", y = "") +
+  theme_minimal()
+
+p2 <- ggplot(top10_inflow_abs, aes(x = reorder(ISO3, inflow), y = inflow)) +
+  geom_point(size = 3) +
+  coord_flip() +
+  labs(title = "Top Inflows", x = "", y = "") +
+  theme_minimal()
+
+# Afficher les deux plots côte à côte
+p1 + p2
+
+```
+
+```{r}
+# Ajouter les noms de pays
+table_rates <- table_rates %>%
+  left_join(world %>% st_drop_geometry() %>% select(ISO3, VISUALIZATION_NAME), by = "ISO3")
+
+# Top 10 émigration/immigration par habitant
+top10_emigrates <- table_rates %>%
+  arrange(desc(emigrates)) %>%
+  slice_head(n = 10)
+
+top10_immigrates <- table_rates %>%
+  arrange(desc(immigrates)) %>%
+  slice_head(n = 10)
+
+```
+
+```{r}
+# Points avec noms complets
+p3 <- ggplot(top10_emigrates, aes(x = emigrates, y = reorder(VISUALIZATION_NAME, emigrates))) +
+  geom_point(shape = 1, size = 3) +
+  labs(title = "Top Outflows (per capita)", x = "", y = "") +
+  theme_minimal()
+
+p4 <- ggplot(top10_immigrates, aes(x = immigrates, y = reorder(VISUALIZATION_NAME, immigrates))) +
+  geom_point(shape = 1, size = 3) +
+  labs(title = "Top Inflows (per capita)", x = "", y = "") +
+  theme_minimal()
+
+# Affichage côte à côte
+p3 + p4
+
+```
+
+```{r}
+## 3 Correlation with Explanatory Variables
+
+### Merge with explanatory variables (2022 only)
+
+# Sélection des covariables explicatives pour 2022
+cov_2022 <- my_covariates %>%
+  filter(period == "2022") %>%
+  select(
+    ISO3, lifeexp, politicalstability, vulnerability, natural_disaster,
+    conflictpercapita, t2m_diff, dry, prec_5days, ghwr_35, hwf_upp, unemployment_rate
+  )
+
+# Merge avec table_rates
+table_corr <- table_rates %>%
+  left_join(cov_2022, by = "ISO3")
+
+### Correlation matrix
+
+library(corrr)
+
+# Sélection des colonnes numériques
+numeric_vars <- table_corr %>%
+  select(emigrates, immigrates, net,
+         lifeexp, politicalstability, vulnerability, natural_disaster,
+         conflictpercapita, t2m_diff, dry, prec_5days, ghwr_35, hwf_upp, unemployment_rate)
+
+# Calcul des corrélations avec gestion des NA
+cor_matrix <- correlate(numeric_vars, use = "pairwise.complete.obs")
+
+# Visualisation
+cor_matrix %>%
+  stretch() %>%
+  filter(x %in% c("emigrates", "immigrates")) %>%
+  ggplot(aes(x = reorder(y, r), y = r, fill = x)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(title = "Correlation with Migration Rates",
+       x = "Explanatory Variable", y = "Pearson correlation") +
+  theme_minimal()
+
+
+```
+
+-   **Positive Correlates of Immigration:**
+    -   **Life expectancy** and **political stability** are positively correlated with immigration. These countries tend to attract migrants due to better living conditions and governance.
+    -   **Net migration** is, by construction, highly correlated with immigration.
+    -   **Climatic variables** such as **temperature anomalies** and **precipitation extremes** show moderate positive relationships.
+-   **Positive Correlates of Emigration:**
+    -   **Conflict per capita** and **natural disasters** are positively associated with emigration, reflecting common push factors.
+    -   **Drought conditions** and **heatwaves** (e.g., `dry`, `hwf_upp`) also align with climate-induced migration pressures.
+-   **Inverse Relationships Across Migration Types:**
+    -   **Political stability**: *positive* for immigration, *negative* for emigration.
+    -   **Life expectancy**: *positive* for immigration, *negative* or weakly negative for emigration.
+    -   **Vulnerability index**: tends to increase emigration and reduce immigration.
+
+```{r}
+ggplot(world_final) +
+  geom_sf(aes(fill = emigrates), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "inferno", name = "Taux d’émigration", trans = "sqrt") +
+  theme_minimal() +
+  labs(title = "Taux d’émigration par pays (2020–2024)")
+
+```
+
+```{r}
+ggplot(world_final) +
+  geom_sf(aes(fill = immigrates), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "plasma", name = "Taux d’immigration", trans = "sqrt") +
+  theme_minimal() +
+  labs(title = "Taux d’immigration par pays (2020–2024)")
+
+```
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+
+ggplot(world_final) +
+  geom_sf(aes(fill = net), color = "white", size = 0.1) +
+  scale_fill_gradient2(
+    low = "red", mid = "black", high = "blue", midpoint = 0.2,
+    name = "Net migration rate"
+  ) +
+  theme_void() +
+  labs(
+    title = "Net Migration Rate (2020–2024)",
+    caption = "Blue = net inflow, Red = net outflow"
+  )
+
+```
+
+```{r}
+climate_2022 <- my_covariates %>%
+  filter(period == "2022") %>%
+  select(ISO3, t2m_diff)
+
+world_final <- world_final %>%
+  left_join(climate_2022, by = "ISO3")
+
+ggplot(world_final) +
+  geom_sf(aes(fill = t2m_diff), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "C", name = "Δ Température (°C)") +
+  theme_void() +
+  labs(
+    title = "Variation de température (2020–2024)",
+    caption = "Source: Données climatiques CCMN"
+  )
+
+```
+
+```{r}
+library(spdep)
+library(sf)
+library(ggplot2)
+
+# 1. Préparer les centroids (coordonnées des centres de pays)
+coords <- st_centroid(world_final$geometry)
+
+# 2. Convertir les coordonnées en matrice
+coords_mat <- st_coordinates(coords)
+
+# 3. Créer les voisins contigus (Queen)
+nb_contig <- poly2nb(world_final)
+
+# 4. Créer les 4 plus proches voisins
+nb_knn <- knn2nb(knearneigh(coords_mat, k = 4))
+
+# 5. Combiner les deux
+nb_combined <- union.nb(nb_contig, nb_knn)
+
+# 6. Visualiser la carte avec les liens de voisinage
+plot(st_geometry(world_final), col = "lightgray", main = "voisins")
+plot(nb_combined, coords = coords_mat, add = TRUE, col = "black", lwd = 0.7)
+
 ```
