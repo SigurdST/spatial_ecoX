@@ -10,6 +10,7 @@ We download the necessary packages.
 ```{r, message=FALSE, warning=FALSE}
 library(dplyr)
 library(sf)
+library(WDI)
 ```
 
 # 1 Data
@@ -104,7 +105,7 @@ These consistent patterns suggest that the main global migration trends are robu
 
 #### Notable Differences Between Methods
 
-**Pseudo-Bayesian (pb)**
+**Pseudo-Bayesian**
 
 - Flows seem globally bigger than on the other maps.
 
@@ -116,6 +117,10 @@ These consistent patterns suggest that the main global migration trends are robu
 **Minimization Open and Close**
 
 - Very similar to the Migration Rate method.
+
+**Migration Rate**
+
+- The Russia to Ukraine arrow is reversed compared to the other methods, indicating a different interpretation of the flow direction.
 
 ## 1.2 Contours data
 
@@ -132,4 +137,38 @@ world_proj <- st_transform(world, crs = 'ESRI:54030')
 
 ```{r}
 load("covariates.RData")
+```
+
+## Additional Explanatory Variable: Unemployment Rate
+
+To complement the existing set of explanatory variables, we propose adding the **unemployment rate** as a potential determinant of international migration. A high unemployment rate in a country can push individuals to emigrate in search of better opportunities, while low unemployment in destination countries may attract migrants seeking employment.
+
+This variable is used in several studies, including Hatton & Williamson (2002) and the OECD International Migration Outlook reports, as a key economic factor in explaining migration trends.
+
+The data was retrieved from the **World Bank Open Data** platform, using indicator code `SL.UEM.TOTL.ZS`, and merged into the `my_covariates` dataset for the years corresponding to each migration period (e.g., 1992 for 1990–1995).
+
+```{r}
+# Download unemployment rate from World Bank (indicator code: SL.UEM.TOTL.ZS)
+# We'll select data for years matching the reference points (1992, 1997, 2007, 2012, 2017, 2022)
+unemp_data <- WDI(indicator = "SL.UEM.TOTL.ZS", start = 1992, end = 2022, extra = TRUE) %>%
+  filter(year %in% c(1992, 1997, 2002, 2007, 2012, 2017, 2022)) %>%
+  select(iso3c, year, unemployment_rate = SL.UEM.TOTL.ZS)
+```
+
+```{r}
+# Merge unemployment data into the covariates
+unemp_data <- unemp_data %>%
+  mutate(year = as.character(year))
+my_covariates <- my_covariates %>%
+  mutate(period = recode(period,
+                         "1990-1995" = "1992",
+                         "1995-2000" = "1997",
+                         "2000-2005" = "2002",
+                         "2005-2010" = "2007",
+                         "2010-2015" = "2012",
+                         "2015-2020" = "2017",
+                         "2020-2024" = "2022"))
+my_covariates <- my_covariates %>%
+  left_join(unemp_data, by = c("ISO3"="iso3c", "period"="year"))
+my_covariates
 ```
