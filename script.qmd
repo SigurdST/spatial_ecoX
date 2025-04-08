@@ -2,13 +2,14 @@
 title: "Project in Spatial Econometrics"
 format: html
 editor: visual
-author: "Anaïs BOUGHANEM, Théo DRUILHE and Sigurd SAUE"
+authors: "Anaïs BOUGHANEM, Théo DRUILHE and Sigurd SAUE"
 ---
 
 We download the necessary packages.
 
 ```{r, message=FALSE, warning=FALSE}
 library(dplyr)
+library(sf)
 ```
 
 # 1 Data
@@ -40,7 +41,7 @@ head(mig_rate_2020_2024)
 
 Dennett (2016) proposed a method to estimate bilateral migration flows using a **single stock table** and an estimate of **total global migration**. This approach allows us to generate directional flows even when direct flow data is unavailable.
 
-**Step-by-Step Method**
+#### Step-by-Step Method
 
 Let:
 
@@ -69,8 +70,66 @@ Then:
    F_{g \rightarrow h}^t = M^t \times r_{gh}^t
    $$
 
-**Interpretation**
+#### Interpretation
 
 - The stock table provides the **relative distribution** of migrants.
 - The sum of absolute net changes provides a **scaling factor** for total migration volume.
 - The resulting flows maintain **global consistency** while reflecting the stock structure.
+
+### Description of the Migration Rate Flow Map (2020–2024)
+
+The map displays the largest bilateral migration flows for the period 2020–2024, estimated using the Migration Rate method. In this visualization, arrows represent the direction and relative magnitude of flows between countries, while vertical bars beside each country illustrate the total volume of outgoing (left bar) and incoming (right bar) flows.
+
+This method emphasizes migration intensity, meaning flows are normalized by the size of the origin population. As such, it reveals not only where large numbers of people are moving, but also which countries are experiencing high migration rates relative to their population size.
+
+Several prominent migration corridors are visible:
+
+- From Latin America to North America, especially strong flows from Mexico and Central America to the United States.
+- From South Asia and Southeast Asia to the Gulf countries or to the United States and Canada.
+- From Eastern Europe to Western Europe, especially toward Germany and the UK.
+
+Major countries of origin with significant outward migration include India, Mexico, Syria and the Philippines. On the receiving side, major destinations include the United States, Germany, the United Kingdom, France, Australia, and the Gulf states.
+
+The map highlights both the volume and directionality of global migration, showing that migration flows are not evenly distributed but rather concentrated in a few dominant corridors.
+
+### Comparison of the Migration Rate Method with Other Estimation Methods
+
+To evaluate the reliability and interpretability of the Migration Rate method, we compared it with five alternative estimation methods: Pseudo-Bayesian, Drop Negative, Reverse Negative, Minimization Open, and Minimization Close. The visualizations of each method reveal key similarities and differences in how major global flows are represented.
+
+#### Similarities
+
+Across all six maps, the same global migration corridors appear consistently, regardless of the estimation technique.
+
+These consistent patterns suggest that the main global migration trends are robust across different estimation methods.
+
+#### Notable Differences Between Methods
+
+**Pseudo-Bayesian (pb)**
+
+- Flows seem globally bigger than on the other maps.
+
+**Drop Negative and Reverse Negative**
+
+- These methods result in sparser maps with fewer visible corridors.
+- Strong flows like Mexico to the US still appear, but smaller flows are often eliminated.
+
+**Minimization Open and Close**
+
+- Very similar to the Migration Rate method.
+
+## 1.2 Contours data
+
+We load the contours data and inspect it.
+
+```{r}
+# Import the world contours GeoJSON file
+world <- st_read("CCMN_GeoDATA.geojson")
+
+# Transform the Coordinate Reference System to ESRI:54030 (World Robinson projection)
+world_proj <- st_transform(world, crs = 'ESRI:54030')
+```
+## 1.3 Explanatory variables at country level
+
+```{r}
+load("covariates.RData")
+```
