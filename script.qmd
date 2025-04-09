@@ -168,7 +168,6 @@ my_covariates <- my_covariates %>%
                          "2020-2024" = "2022"))
 my_covariates <- my_covariates %>%
   left_join(unemp_data, by = c("ISO3"="iso3c", "period"="year"))
-my_covariates
 ```
 
 ## 2 Migration Flows and Dependent Variables
@@ -425,3 +424,169 @@ plot(st_geometry(world_final), col = "lightgray", main = "voisins")
 plot(nb_combined, coords = coords_mat, add = TRUE, col = "black", lwd = 0.7)
 
 ```
+### Moran scatterplot
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(spdep)
+
+world_net <- world_final %>% 
+  filter(!is.na(net))
+
+# 2. Create spatial weights using only countries with data
+coords_net <- st_coordinates(st_centroid(world_net$geometry))
+nb_net <- poly2nb(world_net)
+nb_net_combined <- union.nb(nb_net, knn2nb(knearneigh(coords_net, k = 4)))
+listw_net <- nb2listw(nb_net_combined, style = "W", zero.policy = TRUE)
+# 1. Prepare lagged variable and mean values
+world_net$lag_net <- lag.listw(listw_net, world_net$net)
+mean_net <- mean(world_net$net, na.rm = TRUE)
+mean_lag_net <- mean(world_net$lag_net, na.rm = TRUE)
+
+# 2. Quadrant classification
+world_net$quad <- case_when(
+  world_net$net >= mean_net & world_net$lag_net >= mean_lag_net ~ "High-High",
+  world_net$net <  mean_net & world_net$lag_net <  mean_lag_net ~ "Low-Low",
+  world_net$net >= mean_net & world_net$lag_net <  mean_lag_net ~ "High-Low",
+  world_net$net <  mean_net & world_net$lag_net >= mean_lag_net ~ "Low-High"
+)
+
+# 3. Assign colors to quadrants
+quad_colors <- c(
+  "High-High" = "red",
+  "Low-Low" = "purple",
+  "High-Low" = "green",
+  "Low-High" = "cyan"
+)
+
+# 4. Create the custom Moran scatter plot
+ggplot(world_net, aes(x = net, y = lag_net, color = quad)) +
+  geom_hline(yintercept = mean_lag_net, linetype = "dashed") +
+  geom_vline(xintercept = mean_net, linetype = "dashed") +
+  geom_point(size = 2, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  scale_color_manual(values = quad_colors, name = "Cluster") +
+  theme_minimal() +
+  labs(
+    x = "Net Migration Rate",
+    y = "Spatial Lag of Net Migration Rate",
+    title = "Moran Scatter Plot: Net Migration Rate"
+  )
+```
+
+```{r}
+# 1. Reuse spatial weights already computed: listw_net
+# 2. Local Moran's I on filtered data
+local_moran_net <- localmoran(world_net$net, listw_net, zero.policy = TRUE)
+
+# 3. Add results to the filtered spatial dataframe
+world_net$local_I <- local_moran_net[, 1]         # Local Moran's I value
+world_net$local_p <- local_moran_net[, 5]         # p-value
+```
+
+```{r}
+library(dplyr)
+
+# 1. Compute spatial lag
+world_net$lag_net <- lag.listw(listw_net, world_net$net)
+
+# 2. Define means
+mean_net <- mean(world_net$net, na.rm = TRUE)
+mean_lag_net <- mean(world_net$lag_net, na.rm = TRUE)
+
+# 3. Compute Local Moran's I
+local_net <- localmoran(world_net$net, listw_net, zero.policy = TRUE)
+world_net$local_I <- local_net[, 1]
+world_net$local_p <- local_net[, 5]
+
+# 4. Define LISA quadrant
+world_net$quad <- case_when(
+  world_net$net >= mean_net & world_net$lag_net >= mean_lag_net ~ "HH",
+  world_net$net <  mean_net & world_net$lag_net <  mean_lag_net ~ "LL",
+  world_net$net >= mean_net & world_net$lag_net <  mean_lag_net ~ "HL",
+  world_net$net <  mean_net & world_net$lag_net >= mean_lag_net ~ "LH"
+)
+
+# 5. Keep only significant clusters (e.g., p < 0.05)
+world_net$quad_sig <- ifelse(world_net$local_p < 0.05, world_net$quad, NA)
+
+# 6. Plot: significant LISA clusters
+ggplot(world_net) +
+  geom_sf(aes(fill = quad_sig), color = "white", size = 0.1) +
+scale_fill_manual(
+  values = c("HH" = "red", "LL" = "blue", "HL" = "green", "LH" = "cyan"),
+  na.value = "grey90",  # <- this line fixes the error
+  name = "LISA Cluster"
+) +
+  theme_minimal() +
+  labs(
+    title = "LISA Cluster Map: Net Migration Rate",
+    subtitle = "Significant Local Spatial Autocorrelation (p < 0.05)",
+    caption = "Red = High-High, Blue = Low-Low, Green = High-Low, Cyan = Low-High"
+  )
+```
+### Moran test
+
+```{r}
+# Global Moran’s I test for net migration rate
+moran_test_net <- moran.test(world_net$net, listw_net, zero.policy = TRUE)
+
+# Print the test results
+moran_test_net
+```
+#### Significance Test of Spatial Autocorrelation
+
+We performed a Moran's I test to assess whether the spatial correlation in **net migration rates** (2020–2024) is statistically significant.
+
+The test result is:
+
+- **Moran’s I**: 0.165
+- **Expected value** under null: –0.0047
+- **Standard deviate (z-score)**: 4.22
+- **p-value**: < 0.0001
+
+These results indicate **significant positive spatial autocorrelation** in the net migration rate. That is, countries with high or low net migration rates are geographically clustered, justifying the use of spatial econometric models in further analysis.
+
+### OLS Regression
+
+```{r}
+# Construire un dataset complet uniquement avec les colonnes disponibles
+ols_data <- world_final %>%
+  select(ISO3, VISUALIZATION_NAME, immigrates, emigrates, t2m_diff, population, inflow, outflow, net) %>%
+  na.omit()
+
+# Régression OLS — émigration
+ols_emigrates <- lm(emigrates ~ t2m_diff + population + inflow + outflow + net, data = ols_data)
+
+# Régression OLS — immigration
+ols_immigrates <- lm(immigrates ~ t2m_diff + population + inflow + outflow + net, data = ols_data)
+
+# Résumés des modèles
+summary(ols_emigrates)
+summary(ols_immigrates)
+```
+### Interpretation of the OLS results
+
+
+
+#### Emigration Model (`emigrates`)
+
+The model explains about **41%** of the variance in emigration rates across countries (**Adjusted R² = 0.40**), and the F-statistic confirms that the overall regression is **highly significant** (*p* < 0.001).
+
+**Key findings:**
+- **Temperature anomaly (`t2m_diff`)** has a **positive and significant** effect on emigration. A one-unit increase is associated with an increase of **0.0052** in the emigration rate.
+- **Population** has a **negative effect**: more populous countries tend to show lower emigration rates per capita.
+- **Outflow** is **positively associated** with emigration, as expected.
+- **Net migration** has a **strong negative effect**, meaning countries with higher net inflow tend to have **lower** emigration rates.
+
+#### Immigration Model (`immigrates`)
+
+The immigration model performs better, explaining about **66%** of the variance in immigration (**Adjusted R² = 0.66**), with all coefficients highly significant.
+
+**Key results:**
+- **Temperature anomaly (`t2m_diff`)** is again a significant predictor of immigration.
+- **Population** has a **negative** effect, consistent with per capita normalization.
+- **Outflow** is **positively associated**, which may reflect circular or return migration patterns.
+- **Net migration** has a **very strong positive effect** (**+0.743**, *p* < 0.001), indicating that countries with high net migration are also receiving proportionally more immigrants.
+
