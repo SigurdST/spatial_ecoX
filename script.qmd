@@ -170,7 +170,7 @@ my_covariates <- my_covariates %>%
   left_join(unemp_data, by = c("ISO3"="iso3c", "period"="year"))
 ```
 
-## 2 Migration Flows and Dependent Variables
+# 2 Migration Flows and Dependent Variables
 
 In this section, we analyze both **immigration** and **emigration** flows, compute per capita migration rates, and create a net migration variable.
 
@@ -551,18 +551,18 @@ These results indicate **significant positive spatial autocorrelation** in the n
 ### OLS Regression
 
 ```{r}
-# Construire un dataset complet uniquement avec les colonnes disponibles
+# Build a complete dataset using only available columns
 ols_data <- world_final %>%
   select(ISO3, VISUALIZATION_NAME, immigrates, emigrates, t2m_diff, population, inflow, outflow, net) %>%
   na.omit()
 
-# Régression OLS — émigration
+# OLS regression — emigration
 ols_emigrates <- lm(emigrates ~ t2m_diff + population + inflow + outflow + net, data = ols_data)
 
-# Régression OLS — immigration
+# OLS regression — immigration
 ols_immigrates <- lm(immigrates ~ t2m_diff + population + inflow + outflow + net, data = ols_data)
 
-# Résumés des modèles
+# Model summaries
 summary(ols_emigrates)
 summary(ols_immigrates)
 ```
