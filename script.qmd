@@ -28,7 +28,7 @@ We first load and analyze the data.
 
 ```{r}
 # Load the migration data
-load("data/mig_data.RData")
+load("mig_data.RData")
 
 # Inspect the structure of the data
 str(mig_data)
@@ -128,7 +128,7 @@ We load the contours data and inspect it.
 
 ```{r}
 # Import the world contours GeoJSON file
-world <- st_read("data/CCMN_GeoDATA.geojson")
+world <- st_read("CCMN_GeoDATA.geojson")
 
 # Transform the Coordinate Reference System to ESRI:54030 (World Robinson projection)
 world_proj <- st_transform(world, crs = 'ESRI:54030')
@@ -137,7 +137,7 @@ world_proj <- st_transform(world, crs = 'ESRI:54030')
 ## 1.3 Explanatory variables at country level
 
 ```{r}
-load("data/covariates.RData")
+load("covariates.RData")
 ```
 
 ## Additional Explanatory Variable: Unemployment Rate
@@ -178,15 +178,11 @@ my_covariates <- my_covariates %>%
 In this section, we analyze both **immigration** and **emigration** flows, compute per capita migration rates, and create a net migration variable.
 
 ```{r}
-library(dplyr)
-library(ggplot2)
-library(tidyr)
-
-# 1. Filtrer les données migration sur 2020–2024
+# 1. Filter migration data for the period 2020–2024
 mig_data_filtered <- mig_data %>%
   filter(period == "2020-2024")
 
-# 2. Agréger les flux entrants et sortants
+# 2. Aggregate inbound and outbound flows by country
 inflows <- mig_data_filtered %>%
   group_by(dest) %>%
   summarise(inflow = sum(reverse_neg, na.rm = TRUE))
@@ -195,27 +191,26 @@ outflows <- mig_data_filtered %>%
   group_by(origin) %>%
   summarise(outflow = sum(reverse_neg, na.rm = TRUE))
 
-# 3. Garder uniquement la population pour 2022 (liée à 2020–2024)
+# 3. Keep only the population data for 2022 (corresponding to the 2020–2024 period)
 pop_2022 <- my_covariates %>%
   filter(period == "2022") %>%
   select(ISO3, population)
 
-# 4. Join clean
+# 4. Merge population with flows and compute per capita migration indicators
 table_rates <- pop_2022 %>%
   left_join(inflows, by = c("ISO3" = "dest")) %>%
   left_join(outflows, by = c("ISO3" = "origin")) %>%
   mutate(
-    inflow = replace_na(inflow, 0),
-    outflow = replace_na(outflow, 0),
-    immigrates = inflow / population,
-    emigrates = outflow / population,
-    net = immigrates - emigrates
+    inflow = replace_na(inflow, 0),        # Replace missing inflow values with 0
+    outflow = replace_na(outflow, 0),      # Replace missing outflow values with 0
+    immigrates = inflow / population,      # Compute immigration rate
+    emigrates = outflow / population,      # Compute emigration rate
+    net = immigrates - emigrates           # Compute net migration rate
   )
-
 ```
 
 ```{r}
-# Top 10 pays en termes absolus (pas par habitant)
+# Top 10 countries in absolute terms (not per capita)
 top10_outflow_abs <- table_rates %>%
   arrange(desc(outflow)) %>%
   slice_head(n = 10)
@@ -224,9 +219,9 @@ top10_inflow_abs <- table_rates %>%
   arrange(desc(inflow)) %>%
   slice_head(n = 10)
 
-# Les deux graphes côte à côte
+# Two plots side by side
 library(ggplot2)
-library(patchwork)  # pour coller les graphes
+library(patchwork)  # to combine the plots
 
 p1 <- ggplot(top10_outflow_abs, aes(x = reorder(ISO3, outflow), y = outflow)) +
   geom_point(size = 3) +
@@ -240,17 +235,17 @@ p2 <- ggplot(top10_inflow_abs, aes(x = reorder(ISO3, inflow), y = inflow)) +
   labs(title = "Top Inflows", x = "", y = "") +
   theme_minimal()
 
-# Afficher les deux plots côte à côte
+# Display both plots side by side
 p1 + p2
 
 ```
 
 ```{r}
-# Ajouter les noms de pays
+# Add country names
 table_rates <- table_rates %>%
   left_join(world %>% st_drop_geometry() %>% select(ISO3, VISUALIZATION_NAME), by = "ISO3")
 
-# Top 10 émigration/immigration par habitant
+# Top 10 emigration/immigration per capita
 top10_emigrates <- table_rates %>%
   arrange(desc(emigrates)) %>%
   slice_head(n = 10)
@@ -258,11 +253,10 @@ top10_emigrates <- table_rates %>%
 top10_immigrates <- table_rates %>%
   arrange(desc(immigrates)) %>%
   slice_head(n = 10)
-
 ```
 
 ```{r}
-# Points avec noms complets
+# Scatter plots with full country names
 p3 <- ggplot(top10_emigrates, aes(x = emigrates, y = reorder(VISUALIZATION_NAME, emigrates))) +
   geom_point(shape = 1, size = 3) +
   labs(title = "Top Outflows (per capita)", x = "", y = "") +
@@ -273,17 +267,13 @@ p4 <- ggplot(top10_immigrates, aes(x = immigrates, y = reorder(VISUALIZATION_NAM
   labs(title = "Top Inflows (per capita)", x = "", y = "") +
   theme_minimal()
 
-# Affichage côte à côte
+# Display both plots side by side
 p3 + p4
 
 ```
 
 ```{r}
-## 3 Correlation with Explanatory Variables
-
-### Merge with explanatory variables (2022 only)
-
-# Sélection des covariables explicatives pour 2022
+# Select explanatory covariates for 2022
 cov_2022 <- my_covariates %>%
   filter(period == "2022") %>%
   select(
@@ -291,7 +281,7 @@ cov_2022 <- my_covariates %>%
     conflictpercapita, t2m_diff, dry, prec_5days, ghwr_35, hwf_upp, unemployment_rate
   )
 
-# Merge avec table_rates
+# Merge with table_rates
 table_corr <- table_rates %>%
   left_join(cov_2022, by = "ISO3")
 
@@ -299,16 +289,16 @@ table_corr <- table_rates %>%
 
 library(corrr)
 
-# Sélection des colonnes numériques
+# Select numeric columns
 numeric_vars <- table_corr %>%
   select(emigrates, immigrates, net,
          lifeexp, politicalstability, vulnerability, natural_disaster,
          conflictpercapita, t2m_diff, dry, prec_5days, ghwr_35, hwf_upp, unemployment_rate)
 
-# Calcul des corrélations avec gestion des NA
+# Compute correlations with NA handling
 cor_matrix <- correlate(numeric_vars, use = "pairwise.complete.obs")
 
-# Visualisation
+# Visualization
 cor_matrix %>%
   stretch() %>%
   filter(x %in% c("emigrates", "immigrates")) %>%
@@ -318,8 +308,6 @@ cor_matrix %>%
   labs(title = "Correlation with Migration Rates",
        x = "Explanatory Variable", y = "Pearson correlation") +
   theme_minimal()
-
-
 ```
 
 -   **Positive Correlates of Immigration:**
@@ -335,13 +323,13 @@ cor_matrix %>%
     -   **Vulnerability index**: tends to increase emigration and reduce immigration.
 
 ```{r}
-# Corriger les géométries invalides et combiner les pays
+# Fix invalid geometries and merge geometries by country
 world_clean <- world %>%
   mutate(geometry = st_make_valid(geometry)) %>%
   group_by(ISO3, VISUALIZATION_NAME) %>%
   summarise(geometry = st_union(geometry), .groups = "drop")
 
-# Merge avec population + inflow/outflow
+# Merge with population + inflow/outflow and per capita migration rates
 world_final <- world_clean %>%
   left_join(table_rates %>% select(ISO3, population, inflow, outflow, immigrates, emigrates, net), by = "ISO3")
 
@@ -350,18 +338,17 @@ world_final <- world_clean %>%
 ```{r}
 ggplot(world_final) +
   geom_sf(aes(fill = emigrates), color = "white", size = 0.1) +
-  scale_fill_viridis_c(option = "inferno", name = "Taux d’émigration", trans = "sqrt") +
+  scale_fill_viridis_c(option = "inferno", name = "Emigration rate", trans = "sqrt") +
   theme_minimal() +
-  labs(title = "Taux d’émigration par pays (2020–2024)")
-
+  labs(title = "Emigration Rate by Country (2020–2024)")
 ```
 
 ```{r}
 ggplot(world_final) +
   geom_sf(aes(fill = immigrates), color = "white", size = 0.1) +
-  scale_fill_viridis_c(option = "plasma", name = "Taux d’immigration", trans = "sqrt") +
+  scale_fill_viridis_c(option = "plasma", name = "Immigration rate", trans = "sqrt") +
   theme_minimal() +
-  labs(title = "Taux d’immigration par pays (2020–2024)")
+  labs(title = "Immigration Rate by Country (2020–2024)")
 
 ```
 
@@ -380,41 +367,44 @@ ggplot(world_final) +
 ```
 
 ```{r}
+# Filter temperature variation data for 2022
 climate_2022 <- my_covariates %>%
   filter(period == "2022") %>%
   select(ISO3, t2m_diff)
 
+# Join temperature data with the spatial dataset
 world_final <- world_final %>%
   left_join(climate_2022, by = "ISO3")
 
+# Plot map of temperature variation
 ggplot(world_final) +
   geom_sf(aes(fill = t2m_diff), color = "white", size = 0.1) +
-  scale_fill_viridis_c(option = "C", name = "Δ Température (°C)") +
+  scale_fill_viridis_c(option = "C", name = "Δ Temperature (°C)") +
   theme_void() +
   labs(
-    title = "Variation de température (2020–2024)",
-    caption = "Source: Données climatiques CCMN"
+    title = "Temperature Change by Country (2020–2024)",
+    caption = "Source: CCMN Climate Data"
   )
 ```
 
 ```{r}
-# 1. Préparer les centroids (coordonnées des centres de pays)
+# 1. Prepare centroids (country center coordinates)
 coords <- st_centroid(world_final$geometry)
 
-# 2. Convertir les coordonnées en matrice
+# 2. Convert the centroids into a coordinate matrix
 coords_mat <- st_coordinates(coords)
 
-# 3. Créer les voisins contigus (Queen)
+# 3. Create contiguity-based neighbors (Queen criterion)
 nb_contig <- poly2nb(world_final)
 
-# 4. Créer les 4 plus proches voisins
+# 4. Create 4-nearest neighbors
 nb_knn <- knn2nb(knearneigh(coords_mat, k = 4))
 
-# 5. Combiner les deux
+# 5. Combine both types of neighbors
 nb_combined <- union.nb(nb_contig, nb_knn)
 
-# 6. Visualiser la carte avec les liens de voisinage
-plot(st_geometry(world_final), col = "lightgray", main = "voisins")
+# 6. Plot the map with neighborhood links
+plot(st_geometry(world_final), col = "lightgray", main = "Neighborhood Links")
 plot(nb_combined, coords = coords_mat, add = TRUE, col = "black", lwd = 0.7)
 ```
 
