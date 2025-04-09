@@ -13,7 +13,11 @@ library(sf)
 library(WDI)
 library(tidyr) 
 library(ggplot2)
-
+library(RColorBrewer)
+library(spdep)
+# install.packages("rnaturalearth")
+library(rnaturalearth)
+# install.packages("rnaturalearthdata")
 ```
 
 # 1 Data
@@ -24,7 +28,7 @@ We first load and analyze the data.
 
 ```{r}
 # Load the migration data
-load("mig_data.RData")
+load("data/mig_data.RData")
 
 # Inspect the structure of the data
 str(mig_data)
@@ -32,7 +36,6 @@ str(mig_data)
 
 ```{r}
 # Filter for the period 2020–2024 and select the Pseudo-Bayesian flow estimates
-
 mig_rate_2020_2024 <- mig_data %>%
   filter(period == "2020-2024") %>%
   select(origin, dest, mig_rate)
@@ -125,7 +128,7 @@ We load the contours data and inspect it.
 
 ```{r}
 # Import the world contours GeoJSON file
-world <- st_read("CCMN_GeoDATA.geojson")
+world <- st_read("data/CCMN_GeoDATA.geojson")
 
 # Transform the Coordinate Reference System to ESRI:54030 (World Robinson projection)
 world_proj <- st_transform(world, crs = 'ESRI:54030')
@@ -134,7 +137,7 @@ world_proj <- st_transform(world, crs = 'ESRI:54030')
 ## 1.3 Explanatory variables at country level
 
 ```{r}
-load("covariates.RData")
+load("data/covariates.RData")
 ```
 
 ## Additional Explanatory Variable: Unemployment Rate
@@ -363,9 +366,6 @@ ggplot(world_final) +
 ```
 
 ```{r}
-library(ggplot2)
-library(RColorBrewer)
-
 ggplot(world_final) +
   geom_sf(aes(fill = net), color = "white", size = 0.1) +
   scale_fill_gradient2(
@@ -377,7 +377,6 @@ ggplot(world_final) +
     title = "Net Migration Rate (2020–2024)",
     caption = "Blue = net inflow, Red = net outflow"
   )
-
 ```
 
 ```{r}
@@ -396,14 +395,9 @@ ggplot(world_final) +
     title = "Variation de température (2020–2024)",
     caption = "Source: Données climatiques CCMN"
   )
-
 ```
 
 ```{r}
-library(spdep)
-library(sf)
-library(ggplot2)
-
 # 1. Préparer les centroids (coordonnées des centres de pays)
 coords <- st_centroid(world_final$geometry)
 
@@ -422,15 +416,11 @@ nb_combined <- union.nb(nb_contig, nb_knn)
 # 6. Visualiser la carte avec les liens de voisinage
 plot(st_geometry(world_final), col = "lightgray", main = "voisins")
 plot(nb_combined, coords = coords_mat, add = TRUE, col = "black", lwd = 0.7)
-
 ```
+
 ### Moran scatterplot
 
 ```{r}
-library(ggplot2)
-library(dplyr)
-library(spdep)
-
 world_net <- world_final %>% 
   filter(!is.na(net))
 
@@ -486,8 +476,6 @@ world_net$local_p <- local_moran_net[, 5]         # p-value
 ```
 
 ```{r}
-library(dplyr)
-
 # 1. Compute spatial lag
 world_net$lag_net <- lag.listw(listw_net, world_net$net)
 
@@ -526,6 +514,7 @@ scale_fill_manual(
     caption = "Red = High-High, Blue = Low-Low, Green = High-Low, Cyan = Low-High"
   )
 ```
+
 ### Moran test
 
 ```{r}
@@ -535,16 +524,17 @@ moran_test_net <- moran.test(world_net$net, listw_net, zero.policy = TRUE)
 # Print the test results
 moran_test_net
 ```
+
 #### Significance Test of Spatial Autocorrelation
 
 We performed a Moran's I test to assess whether the spatial correlation in **net migration rates** (2020–2024) is statistically significant.
 
 The test result is:
 
-- **Moran’s I**: 0.165
-- **Expected value** under null: –0.0047
-- **Standard deviate (z-score)**: 4.22
-- **p-value**: < 0.0001
+-   **Moran’s I**: 0.165
+-   **Expected value** under null: –0.0047
+-   **Standard deviate (z-score)**: 4.22
+-   **p-value**: \< 0.0001
 
 These results indicate **significant positive spatial autocorrelation** in the net migration rate. That is, countries with high or low net migration rates are geographically clustered, justifying the use of spatial econometric models in further analysis.
 
@@ -566,27 +556,324 @@ ols_immigrates <- lm(immigrates ~ t2m_diff + population + inflow + outflow + net
 summary(ols_emigrates)
 summary(ols_immigrates)
 ```
+
 ### Interpretation of the OLS results
-
-
 
 #### Emigration Model (`emigrates`)
 
-The model explains about **41%** of the variance in emigration rates across countries (**Adjusted R² = 0.40**), and the F-statistic confirms that the overall regression is **highly significant** (*p* < 0.001).
+The model explains about **41%** of the variance in emigration rates across countries (**Adjusted R² = 0.40**), and the F-statistic confirms that the overall regression is **highly significant** (*p* \< 0.001).
 
 **Key findings:**
-- **Temperature anomaly (`t2m_diff`)** has a **positive and significant** effect on emigration. A one-unit increase is associated with an increase of **0.0052** in the emigration rate.
-- **Population** has a **negative effect**: more populous countries tend to show lower emigration rates per capita.
-- **Outflow** is **positively associated** with emigration, as expected.
-- **Net migration** has a **strong negative effect**, meaning countries with higher net inflow tend to have **lower** emigration rates.
+
+-   **Temperature anomaly (`t2m_diff`)** has a **positive and significant** effect on emigration. A one-unit increase is associated with an increase of **0.0052** in the emigration rate.
+
+-   **Population** has a **negative effect**: more populous countries tend to show lower emigration rates per capita. - **Outflow** is **positively associated** with emigration, as expected.
+
+-   **Net migration** has a **strong negative effect**, meaning countries with higher net inflow tend to have **lower** emigration rates.
 
 #### Immigration Model (`immigrates`)
 
 The immigration model performs better, explaining about **66%** of the variance in immigration (**Adjusted R² = 0.66**), with all coefficients highly significant.
 
 **Key results:**
-- **Temperature anomaly (`t2m_diff`)** is again a significant predictor of immigration.
-- **Population** has a **negative** effect, consistent with per capita normalization.
-- **Outflow** is **positively associated**, which may reflect circular or return migration patterns.
-- **Net migration** has a **very strong positive effect** (**+0.743**, *p* < 0.001), indicating that countries with high net migration are also receiving proportionally more immigrants.
 
+-   **Temperature anomaly (`t2m_diff`)** is again a significant predictor of immigration.
+
+-   **Population** has a **negative** effect, consistent with per capita normalization.
+
+-   **Outflow** is **positively associated**, which may reflect circular or return migration patterns.
+
+-   **Net migration** has a **very strong positive effect** (**+0.743**, *p* \< 0.001), indicating that countries with high net migration are also receiving proportionally more immigrants.
+
+# 3. Bilateral Migration flows
+
+```{r}
+# Keep only ISO3 codes that are present in the world map
+valid_iso3 <- world$ISO3
+
+# Filter to keep only valid origin and dest countries
+mig_rate_filtered <- mig_rate_2020_2024 %>%
+  filter(origin %in% valid_iso3 & dest %in% valid_iso3)
+```
+
+```{r}
+# Filter covariates for 2022
+covariates_2022 <- my_covariates %>%
+  filter(period == "2022") %>%
+  select(ISO3, lifeexp, politicalstability, conflictpercapita, vulnerability, natural_disaster,
+         t2m_diff, dry, prec_5days, ghwr_35, hwf_upp, unemployment_rate, population)
+```
+
+```{r}
+# Join explanatory variables for origin countries
+mig_with_covariates <- mig_rate_filtered %>%
+  left_join(covariates_2022, by = c("origin" = "ISO3")) %>%
+  rename_with(~ paste0("O_", .), .cols = -c(origin, dest, mig_rate))
+
+# Join explanatory variables for destination countries
+mig_with_covariates <- mig_with_covariates %>%
+  left_join(covariates_2022, by = c("dest" = "ISO3")) %>%
+  rename_with(~ paste0("D_", .), .cols = ends_with("_rate") | 
+                                    ends_with("lifeexp") | 
+                                    ends_with("stability") |
+                                    ends_with("population") |
+                                    ends_with("vulnerability") |
+                                    ends_with("natural_disaster") |
+                                    ends_with("conflictpercapita") |
+                                    ends_with("t2m_diff") |
+                                    ends_with("dry") |
+                                    ends_with("prec_5days") |
+                                    ends_with("ghwr_35") |
+                                    ends_with("hwf_upp"))
+```
+
+```{r}
+head(mig_with_covariates)
+```
+
+```{r}
+data_od <- mig_with_covariates
+```
+
+### Compute distances between O–D pairs and merge using st_distance()
+
+```{r}
+# Load country geometries
+world <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  select(iso_a3, geometry) %>%
+  rename(ISO3 = iso_a3)
+
+# Keep only countries involved in your bilateral data
+world_filtered <- world %>%
+  filter(ISO3 %in% unique(c(data_od$origin, data_od$dest)))
+
+# Get origin centroids
+origins <- data_od %>%
+  select(origin) %>%
+  distinct() %>%
+  left_join(world_filtered, by = c("origin" = "ISO3")) %>%
+  st_as_sf()
+
+# Get destination centroids
+destinations <- data_od %>%
+  select(dest) %>%
+  distinct() %>%
+  left_join(world_filtered, by = c("dest" = "ISO3")) %>%
+  st_as_sf()
+
+# Get centroids of geometries
+origins <- origins %>% mutate(geometry = st_centroid(geometry))
+destinations <- destinations %>% mutate(geometry = st_centroid(geometry))
+
+# Match geometries to each O–D pair in data_od
+origin_geom <- st_geometry(origins)[match(data_od$origin, origins$origin)]
+dest_geom   <- st_geometry(destinations)[match(data_od$dest, destinations$dest)]
+
+# Compute distance between each O–D pair (in meters)
+data_od$distance_km <- as.numeric(st_distance(origin_geom, dest_geom, by_element = TRUE)) / 1000
+```
+
+### Estimate a gravity model
+
+```{r}
+str(data_od)
+```
+
+```{r}
+## Basic gravity model formula
+gravity_model <- lm(
+  D_mig_rate ~ 
+    D_O_lifeexp + D_O_politicalstability + D_O_conflictpercapita + 
+    D_O_vulnerability + D_O_natural_disaster + D_O_t2m_diff + 
+    D_O_dry + D_O_prec_5days + D_O_ghwr_35 + D_O_hwf_upp + 
+    D_O_population +
+    D_lifeexp + D_politicalstability + D_conflictpercapita +
+    D_vulnerability + D_natural_disaster + D_t2m_diff +
+    D_dry + D_prec_5days + D_ghwr_35 + D_hwf_upp + 
+    D_population +
+    distance_km,
+  data = data_od
+)
+```
+
+```{r}
+summary(gravity_model)
+```
+
+We estimated a gravity model explaining bilateral migration rates using origin country characteristics, destination country characteristics, and the bilateral distance between country pairs.
+
+The results show that migration flows are significantly influenced by both push and pull factors:
+
+-   Origin country effects:
+
+    -   Conflict per capita and natural disasters significantly increase out-migration.
+
+    -   Political instability in origin countries is associated with higher migration rates.
+
+    -   Other origin variables like climate extremes or unemployment were not significant in this specification.
+
+-   Destination country effects:
+
+    -   Life expectancy and political stability at destination countries positively influence migration inflows, as expected.
+
+    -   Higher vulnerability at the destination reduces migration inflows.
+
+    -   Surprisingly, some climatic stress indicators (e.g., heatwave frequency) show positive associations, possibly reflecting more developed or visible destinations despite climate risk. - Distance between origin and destination countries has a significant negative effect, confirming the standard gravity model prediction: the farther the destination, the lower the migration rate.
+
+Overall, while the R² is low (\~2%), the model identifies meaningful relationships consistent with migration theory, especially regarding the roles of conflict, governance, and geographic distance.
+
+### Investigate whether there is spatial correlation in the residuals when they are aggregated at origin and destination level
+
+```{r}
+# 1. Extract the model frame (i.e. the rows actually used in the regression)
+model_data <- model.frame(gravity_model)
+
+# Add residuals to this subset
+model_data$residuals <- resid(gravity_model)
+
+# Add origin and destination back in if needed
+model_data$origin <- data_od$origin[as.numeric(rownames(model_data))]
+model_data$dest   <- data_od$dest[as.numeric(rownames(model_data))]
+
+# 2. Aggregate residuals at origin and destination level
+# Residuals by origin
+resid_origin <- model_data %>%
+  group_by(origin) %>%
+  summarise(resid_mean = mean(residuals, na.rm = TRUE))
+
+# Residuals by destination
+resid_dest <- model_data %>%
+  group_by(dest) %>%
+  summarise(resid_mean = mean(residuals, na.rm = TRUE))
+# 3. Prepare spatial data (centroids of countries)
+world_centroids <- world %>%
+  mutate(geometry = st_centroid(geometry)) %>%
+  select(ISO3, geometry)
+
+# 4. Merge residuals with spatial data
+origin_sf <- world_centroids %>%
+  left_join(resid_origin, by = c("ISO3" = "origin")) %>%
+  filter(!is.na(resid_mean))
+
+dest_sf <- world_centroids %>%
+  left_join(resid_dest, by = c("ISO3" = "dest")) %>%
+  filter(!is.na(resid_mean))
+
+# 5. Create neighbors and weights
+# Origin-level
+coords_o <- st_coordinates(origin_sf)
+nb_o <- knn2nb(knearneigh(coords_o, k = 4))
+lw_o <- nb2listw(nb_o, style = "W", zero.policy = TRUE)
+
+# Destination-level
+coords_d <- st_coordinates(dest_sf)
+nb_d <- knn2nb(knearneigh(coords_d, k = 4))
+lw_d <- nb2listw(nb_d, style = "W", zero.policy = TRUE)
+
+# 6. Moran’s I test
+moran_origin <- moran.test(origin_sf$resid_mean, lw_o, zero.policy = TRUE)
+moran_dest <- moran.test(dest_sf$resid_mean, lw_d, zero.policy = TRUE)
+
+# 7. Print the results
+moran_origin
+moran_dest
+```
+
+To assess whether spatial patterns remain unexplained by the gravity model, we computed Moran’s I statistics on the model residuals, aggregated at both the origin and destination country levels.
+
+The results are as follows:
+
+-   Origin-level residuals:
+    -   Moran’s I = 0.031, p-value = 0.231\
+    -   This result is not statistically significant, indicating no strong spatial autocorrelation in residuals at the origin level. In other words, the residuals do not exhibit clustering among neighboring origin countries.
+-   Destination-level residuals:
+    -   Moran’s I = 0.064, p-value = 0.0298\
+    -   This result is statistically significant at the 5% level, suggesting positive spatial autocorrelation in residuals at the destination level. Neighboring destination countries tend to have similar levels of model over- or under-prediction.
+
+Interpretation:\
+While the model seems to adequately capture variation in migration flows from the origin side, the presence of spatial clustering in residuals at the destination level implies that some spatially structured factors may be missing from the model. This finding justifies the consideration of spatial econometric models (e.g., spatial error or spatial lag models) to account for unobserved spatial dependencies among destination countries.
+
+```{r}
+# Attach residuals to the model data
+model_data <- model.frame(gravity_model)
+model_data$residuals <- resid(gravity_model)
+model_data$origin <- data_od$origin[as.numeric(rownames(model_data))]
+model_data$dest <- data_od$dest[as.numeric(rownames(model_data))]
+
+# -------------------------------------
+# ORIGIN-level residuals and Moran plot
+# -------------------------------------
+
+# 1. Average residuals per origin
+resid_origin <- model_data %>%
+  group_by(origin) %>%
+  summarise(resid = mean(residuals, na.rm = TRUE))
+
+# 2. Join with spatial data
+origin_sf <- world %>%
+  filter(ISO3 %in% resid_origin$origin) %>%
+  left_join(resid_origin, by = c("ISO3" = "origin")) %>%
+  st_as_sf()
+
+# 3. Create spatial weights
+coords_o <- st_coordinates(st_centroid(origin_sf))
+nb_o <- knn2nb(knearneigh(coords_o, k = 4))
+lw_o <- nb2listw(nb_o, style = "W", zero.policy = TRUE)
+
+# 4. Compute spatial lag
+origin_sf$lag_resid <- lag.listw(lw_o, origin_sf$resid, zero.policy = TRUE)
+
+# 5. Plot
+ggplot(origin_sf, aes(x = resid, y = lag_resid)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Moran Scatter Plot (Origin Residuals)",
+       x = "Residuals", y = "Spatial Lag of Residuals") +
+  theme_minimal()
+
+
+# -----------------------------------------
+# DESTINATION-level residuals and Moran plot
+# -----------------------------------------
+
+# 1. Average residuals per destination
+resid_dest <- model_data %>%
+  group_by(dest) %>%
+  summarise(resid = mean(residuals, na.rm = TRUE))
+
+# 2. Join with spatial data
+dest_sf <- world %>%
+  filter(ISO3 %in% resid_dest$dest) %>%
+  left_join(resid_dest, by = c("ISO3" = "dest")) %>%
+  st_as_sf()
+
+# 3. Create spatial weights
+coords_d <- st_coordinates(st_centroid(dest_sf))
+nb_d <- knn2nb(knearneigh(coords_d, k = 4))
+lw_d <- nb2listw(nb_d, style = "W", zero.policy = TRUE)
+
+# 4. Compute spatial lag
+dest_sf$lag_resid <- lag.listw(lw_d, dest_sf$resid, zero.policy = TRUE)
+
+# 5. Plot
+ggplot(dest_sf, aes(x = resid, y = lag_resid)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Moran Scatter Plot (Destination Residuals)",
+       x = "Residuals", y = "Spatial Lag of Residuals") +
+  theme_minimal()
+```
+
+**Interpretation of Moran Scatter Plots for Spatial Lags of Residuals**
+
+We computed spatial lags of the residuals from the gravity model using neighborhood matrices defined at the origin and destination levels. We then visualized these relationships with Moran scatter plots, where each point represents a country and the regression slope indicates the strength and direction of spatial autocorrelation.
+
+1.  Origin-Level Moran Scatter Plot: The origin-based Moran plot reveals a slight positive slope in the relationship between each origin country's residual and the average residuals of its spatial neighbors. However, the slope is relatively flat, suggesting weak spatial autocorrelation. This means that, overall, neighboring origin countries do not exhibit highly similar model residuals. This aligns with the earlier Moran's I test, which was not statistically significant at the origin level.
+
+2.  Destination-Level Moran Scatter Plot: In contrast, the destination-based Moran plot displays a more pronounced positive slope, indicating moderate spatial clustering of residuals among destination countries. This suggests that neighboring destinations tend to experience similar levels of over- or under-prediction by the gravity model. These results are consistent with the significant Moran's I test at the destination level.
+
+Summary: These findings confirm that there is some degree of spatial dependence in the residuals—particularly for destination countries. This reinforces the idea that spatial processes are not fully captured by the current model and that spatial econometric approaches (e.g., spatial error or lag models) may help better account for these spatial structures.
