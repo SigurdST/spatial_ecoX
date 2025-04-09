@@ -333,6 +333,19 @@ cor_matrix %>%
     -   **Vulnerability index**: tends to increase emigration and reduce immigration.
 
 ```{r}
+# Corriger les géométries invalides et combiner les pays
+world_clean <- world %>%
+  mutate(geometry = st_make_valid(geometry)) %>%
+  group_by(ISO3, VISUALIZATION_NAME) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+# Merge avec population + inflow/outflow
+world_final <- world_clean %>%
+  left_join(table_rates %>% select(ISO3, population, inflow, outflow, immigrates, emigrates, net), by = "ISO3")
+
+```
+
+```{r}
 ggplot(world_final) +
   geom_sf(aes(fill = emigrates), color = "white", size = 0.1) +
   scale_fill_viridis_c(option = "inferno", name = "Taux d’émigration", trans = "sqrt") +
